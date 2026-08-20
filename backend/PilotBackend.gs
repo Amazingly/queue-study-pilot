@@ -4883,7 +4883,7 @@ function PILOT_EXPORT_CSV() {
 function PILOT_NEW_ENVIRONMENT() {
   var props = props_();
   var current = props.getProperty("SEQUENCE_VERSION") || "pilot-seq-v1";
-  var m = current.match(/^(.*?)(d+)$/);
+  var m = current.match(/^(.*?)(\d+)$/);
   var next = m ? (m[1] + (Number(m[2]) + 1)) : (current + "-v2");
 
   if (!opsConfirm_("Start a fresh pilot environment?",
