@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Queue Decision Study — public interface (GitHub Pages).
+  Architecture (revision plan §1): GitHub displays the experiment;
+  Google Apps Script runs it; Google Sheets records it. This page holds
+  no treatment assignment, no hidden case types, no recovery draws, no
+  payoff arithmetic, and no completion-code generation.
+
+  CSP (§4.5): all scripts and styles are external and same-origin; the
+  page performs no fetch/XHR (connect-src 'none') — the only network
+  path is a form post into a hidden iframe targeted at the Apps Script
+  endpoint.
+
+  §4.5 required this policy to be tested against the production
+  deployment rather than assumed. It was, on 2026-08-19. The measured
+  behaviour: /exec redirects to a PER-DEPLOYMENT user-content host of the
+  form https://n-<hash>-script.googleusercontent.com, not to the bare
+  googleusercontent host, so frame-src and form-action now also carry the
+  wildcard. Chrome raised no violation on the narrower policy, but the
+  wildcard removes the dependence on how each engine treats redirect hops
+  — Safari and Firefox on student phones are not Chrome.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self';
+  style-src 'self';
+  img-src 'self' data:;
+  connect-src 'none';
+  frame-src https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com;
+  form-action https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com;
+  object-src 'none';
+  base-uri 'none';
+">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Queue Decision Study — pilot</title>
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<div class="shell" id="app">
+  <noscript>
+    <div class="card">
+      <p>Nghiên cứu này cần JavaScript. Vui lòng bật JavaScript rồi tải lại trang.</p>
+      <p>This study requires JavaScript. Please enable JavaScript and reload the page.</p>
+    </div>
+  </noscript>
+</div>
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>
