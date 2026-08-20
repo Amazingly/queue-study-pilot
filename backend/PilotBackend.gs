@@ -16,7 +16,7 @@
  *   8. experiment version
  *   9. expected app version
  *   10. study base url default
- *   11. per-run cap on the live session
+ *   11. admit overruns instead of refusing them
  *   12. pilot menu
  *   13. An appended Pilot.gs module: setup, open link, status,
  *      CSV export to Drive, stop.
@@ -1443,11 +1443,6 @@ function liveSessionRefusal_(live) {
     var exp = new Date(live.expires_at).getTime();
     if (isFinite(exp) && Date.now() > exp) return "LECTURE_CLOSED";
   }
-  // PILOT: a run is opened for a chosen number of blocks. Once its places
-  // are taken the link refuses further entries rather than consuming the
-  // next run's slots. Opening another run lifts the cap immediately.
-  var cap = Number(configGet_("live_max_claims", "0"));
-  if (cap > 0 && Number(configGet_("live_claimed", "0")) >= cap) return "LECTURE_FULL";
   return null;
 }
 
@@ -1497,6 +1492,12 @@ function alignPoolToFreshBlock_(pool) {
 function claimFromPool_(envelope, live) {
   var pool = poolLecture_();
   if (!pool) return errorResponse_(envelope, "LECTURE_CODE_INVALID", false);
+  // PILOT: a run's size is a plan, not a wall. Refusing a student who is
+  // sitting in the room is the worst outcome this instrument can produce,
+  // so if a run overruns its plan the ledger grows and the entry proceeds.
+  // Costs nothing in the normal case -- the pool almost always has free
+  // places and this returns immediately.
+  pool = pilotTopUpPool_(pool);
   if (poolPlacesRemaining_(pool) <= 0) return errorResponse_(envelope, "LECTURE_FULL", false);
 
   var startedCount = researchSheet_(SHEETS.SESSIONS).getLastRow() - 1;
@@ -4777,10 +4778,22 @@ function doGet() {
    ================================================================== */
 
 /* One block = three participants. A run is sized in blocks, not people,
- * because the block is the unit that keeps treatment balanced. */
+ * because the block is the unit that keeps treatment balanced.
+ *
+ * The size you choose is a PLAN, not a wall. If more people turn up than
+ * were planned for they are admitted, because refusing a student who is
+ * sitting in the room is the worst outcome this instrument can produce.
+ * Opening a run therefore reserves generous headroom beyond the plan, and
+ * a last-resort top-up on the participant path guarantees the promise
+ * even if the headroom is exhausted too. */
 var PILOT_RUN_BLOCKS_MIN = 5;
 var PILOT_RUN_BLOCKS_MAX = 20;
 var PILOT_RUN_BLOCKS_DEFAULT = 10;
+
+/* Blocks of slack reserved beyond the plan when a run opens, and the
+ * chunk appended if a run overruns even that. */
+var PILOT_HEADROOM_BLOCKS = 20;
+var PILOT_TOPUP_BLOCKS = 10;
 
 /* The seed pool a fresh environment starts with. Small on purpose: the
  * pool grows when a run needs it, so provisioning need not guess. */
@@ -4834,7 +4847,17 @@ function pilotRefreezeCommitments_() {
   configSet_("allocation_rows", String(alloc.rows));
   configSet_("design_manifest_hash", manifest.hash);
   configSet_("design_recomputed_at", nowIso_());
+  configSet_("design_recompute_pending", "FALSE");
   return manifest.hash;
+}
+
+/* Recompute the commitments if growth on the participant path deferred it.
+ * Called by every menu operation, so the values an operator ever looks at
+ * are current, while no participant waits for a hash over the whole table. */
+function pilotSyncCommitments_() {
+  if (!configTrue_("design_recompute_pending")) return false;
+  pilotRefreezeCommitments_();
+  return true;
 }
 
 /* Append whole blocks, continuing the generator at the next block index.
@@ -4846,7 +4869,7 @@ function pilotRefreezeCommitments_() {
  * Invitation links are NOT appended: they exist to carry token-based
  * entry, which the pilot never uses (it enters by classroom code), so
  * writing them would add rows nothing reads. */
-function pilotAppendBlocks_(extraBlocks) {
+function pilotAppendBlocks_(extraBlocks, deferCommitments) {
   extraBlocks = Math.max(1, Math.floor(Number(extraBlocks)));
   var pool = poolLecture_();
   if (!pool) throw new Error("No POOL lecture. Run PILOT -> 1. Set up the pilot first.");
@@ -4914,7 +4937,11 @@ function pilotAppendBlocks_(extraBlocks) {
   configSet_("target_total", String(places));
   configSet_("maximum_total", String(places));
   configSet_("target_per_arm", String(Math.round(places / DESIGN.TREATMENTS.length)));
-  pilotRefreezeCommitments_();
+  // Hashing the whole sequence table is the one slow step here. On the
+  // participant path it is deferred: nobody entering the study should wait
+  // for a checksum, and the next menu operation brings it up to date.
+  if (deferCommitments) configSet_("design_recompute_pending", "TRUE");
+  else pilotRefreezeCommitments_();
   SpreadsheetApp.flush();
   return extraBlocks;
 }
@@ -4927,6 +4954,17 @@ function pilotEnsureUnusedSlots_(needSlots) {
   var unused = Number(pool.slot_count) - Number(pool.next_claim_order) + 1;
   if (unused >= needSlots) return 0;
   return pilotAppendBlocks_(Math.ceil((needSlots - unused) / DESIGN.TREATMENTS.length));
+}
+
+/* Last resort, called on the participant path just before a slot is
+ * claimed. Costs nothing in the normal case: the pool almost always has
+ * free places, so this returns immediately without a single extra read.
+ * Runs inside the router's script lock, so it must NOT take the lock
+ * again -- pilotAppendBlocks_ deliberately does not. */
+function pilotTopUpPool_(pool) {
+  if (!pool || poolPlacesRemaining_(pool) > 0) return pool;
+  pilotAppendBlocks_(PILOT_TOPUP_BLOCKS, true);
+  return poolLecture_();
 }
 
 /* ---- Operations, in the order an operator uses them ---------------- */
@@ -5013,13 +5051,15 @@ function PILOT_OPEN_LINK() {
   }
   if (!poolLecture_()) return opsNotify_("Cannot open", "Run PILOT -> 1. Set up the pilot first.");
 
-  var grown;
   try {
-    grown = pilotWithLock_(function () {
+    pilotWithLock_(function () {
+      pilotSyncCommitments_();
       // Retire whatever remains of the previous run's final block first, so
-      // this run starts on a block boundary; then make sure its blocks exist.
+      // this run starts on a block boundary; then reserve the run's blocks
+      // PLUS headroom, so an overrun is absorbed without any work on the
+      // participant path.
       alignPoolToFreshBlock_(poolLecture_());
-      return pilotEnsureUnusedSlots_(blocks * DESIGN.TREATMENTS.length);
+      return pilotEnsureUnusedSlots_((blocks + PILOT_HEADROOM_BLOCKS) * DESIGN.TREATMENTS.length);
     });
   } catch (e) {
     return opsNotify_("Cannot open", (e && e.message ? e.message : String(e)));
@@ -5039,9 +5079,12 @@ function PILOT_OPEN_LINK() {
   configSet_("live_expires_at", "");          // no auto-expiry
   configSet_("live_claimed", "0");
   configSet_("live_run_blocks", String(blocks));
-  configSet_("live_max_claims", String(blocks * DESIGN.TREATMENTS.length));
+  // The plan, recorded for the operator and the record. Deliberately NOT a
+  // cap: nobody is refused for exceeding it.
+  configSet_("live_planned_places", String(blocks * DESIGN.TREATMENTS.length));
+  configSet_("live_max_claims", "");        // retired; runs are no longer capped
   SpreadsheetApp.flush();
-  return PILOT_SHOW_LINK(grown);
+  return PILOT_SHOW_LINK();
 }
 
 /* 3. The link to send. The six-digit code is embedded, so a participant
@@ -5053,26 +5096,30 @@ function pilotParticipantUrl_() {
 
 function pilotRunSummary_() {
   var pool = poolLecture_();
-  var cap = Number(configGet_("live_max_claims", "0"));
+  var planned = Number(configGet_("live_planned_places", "0"));
   var used = Number(configGet_("live_claimed", "0"));
   var run = Number(configGet_("pilot_run_number", "0"));
   var open = collectionOpen_() && configTrue_("live_open");
+  var free = pool ? poolPlacesRemaining_(pool) : 0;
+  var over = planned > 0 && used > planned ? "  (" + (used - planned) + " over the plan, all admitted)" : "";
   return "Entry open : " + (open ? "YES" : "NO") +
-    "\nThis run   : " + (run ? "#" + run + ", " + used + " of " + cap + " places (" +
-      configGet_("live_run_blocks", "?") + " blocks)" : "none opened yet") +
+    "\nThis run   : " + (run
+      ? "#" + run + ", " + used + " joined; planned " + planned + " places (" +
+        configGet_("live_run_blocks", "?") + " blocks)" + over
+      : "none opened yet") +
+    "\nCapacity   : " + free + " free places ready; the pool grows if a run overruns" +
     "\nPool       : " + (pool ? Number(pool.claimed_count) : 0) + " used of " +
-      (pool ? Number(pool.slot_count) : 0) + " (" + pilotBlockCount_() + " blocks, grows on demand)";
+      (pool ? Number(pool.slot_count) : 0) + " (" + pilotBlockCount_() + " blocks)";
 }
 
-function PILOT_SHOW_LINK(grownBlocks) {
-  var grew = Number(grownBlocks) > 0
-    ? "\n\nThe pool was extended by " + grownBlocks + " block(s) to make room for this run."
-    : "";
+function PILOT_SHOW_LINK() {
+  pilotSyncCommitments_();
   return opsNotify_("Pilot participant link",
     pilotParticipantUrl_() +
-    "\n\n" + pilotRunSummary_() + grew +
-    "\n\nAnyone with this link can take part until the run fills or you close it " +
-    "(PILOT -> Stop the pilot). Open another run whenever you like.");
+    "\n\n" + pilotRunSummary_() +
+    "\n\nAnyone with this link can take part until you close the run " +
+    "(PILOT -> Stop the pilot). If more people turn up than you planned for, " +
+    "they are admitted rather than turned away.");
 }
 
 /* 4. CSV snapshot into Drive. Writes one file per tab, timestamped, into
@@ -5092,6 +5139,7 @@ function pilotSheetToCsv_(sheet) {
 }
 
 function PILOT_EXPORT_CSV() {
+  pilotSyncCommitments_();
   var folders = DriveApp.getFoldersByName(PILOT_CSV_FOLDER);
   var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(PILOT_CSV_FOLDER);
   var stamp = Utilities.formatDate(new Date(), "Etc/GMT", "yyyy-MM-dd_HHmm") + "Z";
@@ -5157,6 +5205,7 @@ function PILOT_NEW_ENVIRONMENT() {
 
 /* 5. Status and stop. */
 function PILOT_STATUS() {
+  pilotSyncCommitments_();
   var research = researchBook_();
   var count = function (tab) {
     var s = research.getSheetByName(tab);
@@ -5177,6 +5226,7 @@ function PILOT_CLOSE() {
   configSet_("live_open", "FALSE");
   configSet_("closed_at", nowIso_());
   SpreadsheetApp.flush();
+  pilotSyncCommitments_();
   return opsNotify_("Pilot stopped",
     "Entry is closed. The link now refuses new participants; sessions already in progress can still finish.\n\n" +
     "Open another run at any time with PILOT -> 2. Open a run.\n\n" +
