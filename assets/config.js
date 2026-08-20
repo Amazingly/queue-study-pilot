@@ -13,7 +13,7 @@
 
 export const PUBLIC_CONFIG = Object.freeze({
   APP_VERSION: "queue-study-pilot-v1",
-  API_URL: "PASTE_PILOT_EXEC_URL",
+  API_URL: "https://script.google.com/macros/s/AKfycbzQhGM4_1ZuwsOjmeVTOw0TicFb1oNReOYcAdQGIjmNV_bJaYMCR81ic1yBmttHLPKu/exec",
   PARENT_ORIGIN: "https://amazingly.github.io",
   NUM_ROUNDS: 20,
   DECISION_SECONDS: 60,
