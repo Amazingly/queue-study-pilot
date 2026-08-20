@@ -4777,27 +4777,27 @@ function doGet() {
    In the live study they remain untouchable.
    ================================================================== */
 
-/* One block = three participants. A run is sized in blocks, not people,
- * because the block is the unit that keeps treatment balanced.
+/* A run is sized in PARTICIPANTS, because that is what an operator knows:
+ * how many students are in the room. Internally the pool still moves in
+ * blocks of three -- the block is the unit that keeps treatment balanced,
+ * since its three participants share one stochastic sequence and receive
+ * the three different labelling policies between them -- so a requested
+ * size is rounded UP to whole blocks. Ask for 41 and you get 42 places in
+ * 14 blocks; the spare place is retired when the next run opens.
  *
- * The size you choose is a PLAN, not a wall. If more people turn up than
- * were planned for they are admitted, because refusing a student who is
- * sitting in the room is the worst outcome this instrument can produce.
- * Opening a run therefore reserves generous headroom beyond the plan, and
- * a last-resort top-up on the participant path guarantees the promise
- * even if the headroom is exhausted too. */
-var PILOT_RUN_BLOCKS_MIN = 5;
-var PILOT_RUN_BLOCKS_MAX = 20;
-var PILOT_RUN_BLOCKS_DEFAULT = 10;
-
-/* Blocks of slack reserved beyond the plan when a run opens, and the
- * chunk appended if a run overruns even that. */
-var PILOT_HEADROOM_BLOCKS = 20;
-var PILOT_TOPUP_BLOCKS = 10;
+ * The size you enter is a PLAN, not a wall. If more people turn up than
+ * planned they are admitted, because refusing a student who is sitting in
+ * the room is the worst outcome this instrument can produce. Opening a run
+ * reserves headroom beyond the plan, and a last-resort top-up on the
+ * participant path guarantees the promise even if the headroom runs out.
+ * Every run is independent: any run may be any size in the range. */
+var PILOT_RUN_MIN_PARTICIPANTS = 10;
+var PILOT_RUN_MAX_PARTICIPANTS = 150;
+var PILOT_RUN_DEFAULT_PARTICIPANTS = 30;
 
 /* The seed pool a fresh environment starts with. Small on purpose: the
  * pool grows when a run needs it, so provisioning need not guess. */
-var PILOT_POOL_PLACES = PILOT_RUN_BLOCKS_MAX * 3;
+var PILOT_POOL_PLACES = 60;
 
 var PILOT_LINK_CODE = "100200";       // fixed, embedded in the participant URL
 var PILOT_CSV_FOLDER = "Queue Study PILOT data";
@@ -4808,6 +4808,19 @@ var PILOT_EXPORT_TABS = [
 ];
 
 /* ---- Open-ended pool ---------------------------------------------- */
+
+/* Whole blocks needed to seat this many participants, rounding up. */
+function pilotBlocksFor_(participants) {
+  return Math.ceil(Number(participants) / DESIGN.TREATMENTS.length);
+}
+
+/* Slack reserved beyond the plan, in blocks: half again as many, never
+ * fewer than ten blocks. Proportional, so a large class gets proportionally
+ * large headroom and a small one is not made to provision a large pool. */
+function pilotHeadroomBlocks_(blocks) {
+  return Math.max(10, Math.ceil(Number(blocks) / 2));
+}
+
 
 /* Serialise growth against live claims. The request router holds the
  * same script lock while a participant claims a slot, so taking it here
@@ -4963,7 +4976,11 @@ function pilotEnsureUnusedSlots_(needSlots) {
  * again -- pilotAppendBlocks_ deliberately does not. */
 function pilotTopUpPool_(pool) {
   if (!pool || poolPlacesRemaining_(pool) > 0) return pool;
-  pilotAppendBlocks_(PILOT_TOPUP_BLOCKS, true);
+  // Scale the chunk to the run in progress: a 150-person class that has
+  // already exhausted its headroom is overrunning by more than a 12-person
+  // one, and should not have to top up ten times to get there.
+  var planned = Number(configGet_("live_run_blocks", "0"));
+  pilotAppendBlocks_(pilotHeadroomBlocks_(planned > 0 ? planned : 10), true);
   return poolLecture_();
 }
 
@@ -5004,41 +5021,49 @@ function PILOT_SETUP() {
  * study's ethics wording and release placeholders, neither of which
  * exists here. selfCheck() still runs, so a broken or unprovisioned
  * environment cannot be opened. */
-function pilotAskRunBlocks_() {
+function pilotAskRunSize_() {
   var ui;
   try {
     ui = SpreadsheetApp.getUi();
   } catch (e) {
-    return { blocks: PILOT_RUN_BLOCKS_DEFAULT };   // no UI: use the default
+    return { participants: PILOT_RUN_DEFAULT_PARTICIPANTS };   // no UI: default
   }
   var answer = ui.prompt("Open a pilot run",
-    "How many blocks for this run?\n\n" +
-    "One block = three participants, who share one stochastic sequence and " +
-    "receive the three different labelling policies between them.\n\n" +
-    "Enter a whole number from " + PILOT_RUN_BLOCKS_MIN + " to " + PILOT_RUN_BLOCKS_MAX +
-    " (" + (PILOT_RUN_BLOCKS_MIN * 3) + " to " + (PILOT_RUN_BLOCKS_MAX * 3) + " participants). " +
-    "Leave it blank for " + PILOT_RUN_BLOCKS_DEFAULT + " blocks.",
+    "How many participants do you expect in this run?\n\n" +
+    "Enter a whole number from " + PILOT_RUN_MIN_PARTICIPANTS + " to " +
+    PILOT_RUN_MAX_PARTICIPANTS + ". Leave it blank for " +
+    PILOT_RUN_DEFAULT_PARTICIPANTS + ".\n\n" +
+    "Any run may be any size in that range, and runs are independent: a " +
+    "class of 120 today and a group of 12 tomorrow are both fine.\n\n" +
+    "The number is rounded up to whole groups of three, because three " +
+    "participants share one sequence and take the three different labelling " +
+    "policies between them. If more people turn up than you enter, they are " +
+    "admitted anyway -- this is a plan, not a limit.",
     ui.ButtonSet.OK_CANCEL);
   if (answer.getSelectedButton() !== ui.Button.OK) return { cancelled: true };
   var text = String(answer.getResponseText()).trim();
-  if (!text) return { blocks: PILOT_RUN_BLOCKS_DEFAULT };
+  if (!text) return { participants: PILOT_RUN_DEFAULT_PARTICIPANTS };
   if (!/^[0-9]+$/.test(text)) {
     return { error: "\"" + text + "\" is not a whole number. Nothing was opened." };
   }
   var n = parseInt(text, 10);
-  if (n < PILOT_RUN_BLOCKS_MIN || n > PILOT_RUN_BLOCKS_MAX) {
-    return { error: n + " is outside " + PILOT_RUN_BLOCKS_MIN + "-" + PILOT_RUN_BLOCKS_MAX +
-      " blocks. Nothing was opened.\n\nRun this again for another " + PILOT_RUN_BLOCKS_MAX +
-      " blocks whenever you need more; there is no limit on how many runs you open." };
+  if (n < PILOT_RUN_MIN_PARTICIPANTS || n > PILOT_RUN_MAX_PARTICIPANTS) {
+    return { error: n + " is outside " + PILOT_RUN_MIN_PARTICIPANTS + "-" +
+      PILOT_RUN_MAX_PARTICIPANTS + " participants. Nothing was opened.\n\n" +
+      "For a larger cohort, open more than one run: there is no limit on how " +
+      "many you open, and each is audited separately." };
   }
-  return { blocks: n };
+  return { participants: n };
 }
 
 function PILOT_OPEN_LINK() {
-  var ask = pilotAskRunBlocks_();
+  var ask = pilotAskRunSize_();
   if (ask.cancelled) return "Cancelled.";
   if (ask.error) return opsNotify_("Not a valid run size", ask.error);
-  var blocks = ask.blocks;
+
+  var expected = ask.participants;
+  var blocks = pilotBlocksFor_(expected);
+  var places = blocks * DESIGN.TREATMENTS.length;
 
   var check;
   try {
@@ -5059,7 +5084,8 @@ function PILOT_OPEN_LINK() {
       // PLUS headroom, so an overrun is absorbed without any work on the
       // participant path.
       alignPoolToFreshBlock_(poolLecture_());
-      return pilotEnsureUnusedSlots_((blocks + PILOT_HEADROOM_BLOCKS) * DESIGN.TREATMENTS.length);
+      return pilotEnsureUnusedSlots_(
+        (blocks + pilotHeadroomBlocks_(blocks)) * DESIGN.TREATMENTS.length);
     });
   } catch (e) {
     return opsNotify_("Cannot open", (e && e.message ? e.message : String(e)));
@@ -5079,10 +5105,11 @@ function PILOT_OPEN_LINK() {
   configSet_("live_expires_at", "");          // no auto-expiry
   configSet_("live_claimed", "0");
   configSet_("live_run_blocks", String(blocks));
-  // The plan, recorded for the operator and the record. Deliberately NOT a
-  // cap: nobody is refused for exceeding it.
-  configSet_("live_planned_places", String(blocks * DESIGN.TREATMENTS.length));
-  configSet_("live_max_claims", "");        // retired; runs are no longer capped
+  // What the operator asked for, and the seats that rounding actually
+  // reserved. Deliberately NOT caps: nobody is refused for exceeding them.
+  configSet_("live_expected_participants", String(expected));
+  configSet_("live_planned_places", String(places));
+  configSet_("live_max_claims", "");        // retired; runs are not capped
   SpreadsheetApp.flush();
   return PILOT_SHOW_LINK();
 }
@@ -5096,16 +5123,19 @@ function pilotParticipantUrl_() {
 
 function pilotRunSummary_() {
   var pool = poolLecture_();
-  var planned = Number(configGet_("live_planned_places", "0"));
+  var expected = Number(configGet_("live_expected_participants", "0"));
+  var places = Number(configGet_("live_planned_places", "0"));
   var used = Number(configGet_("live_claimed", "0"));
-  var run = Number(configGet_("pilot_run_number", "0"));
+  var runNo = Number(configGet_("pilot_run_number", "0"));
   var open = collectionOpen_() && configTrue_("live_open");
   var free = pool ? poolPlacesRemaining_(pool) : 0;
-  var over = planned > 0 && used > planned ? "  (" + (used - planned) + " over the plan, all admitted)" : "";
+  var rounding = places > expected
+    ? " (rounded up from " + expected + " to whole groups of three)" : "";
+  var over = places > 0 && used > places
+    ? "\n             " + (used - places) + " past the plan, all admitted" : "";
   return "Entry open : " + (open ? "YES" : "NO") +
-    "\nThis run   : " + (run
-      ? "#" + run + ", " + used + " joined; planned " + planned + " places (" +
-        configGet_("live_run_blocks", "?") + " blocks)" + over
+    "\nThis run   : " + (runNo
+      ? "#" + runNo + " - " + used + " joined of " + places + " places planned" + rounding + over
       : "none opened yet") +
     "\nCapacity   : " + free + " free places ready; the pool grows if a run overruns" +
     "\nPool       : " + (pool ? Number(pool.claimed_count) : 0) + " used of " +

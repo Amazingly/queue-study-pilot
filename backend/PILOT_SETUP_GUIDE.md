@@ -26,7 +26,7 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 4. **PILOT → 1. Set up the pilot (once).** Google will ask you to
    authorize: *Advanced → Go to project (unsafe) → Allow*. It is your own
    script. This creates the two pilot workbooks, provisions a **seed pool
-   of 60 places (20 blocks of three)** and runs the self-check. It takes
+   of 60 places** and runs the self-check. It takes
    about twenty seconds. The seed size does not cap anything: the pool
    grows whenever a run needs more, so you never have to guess in
    advance.
@@ -43,12 +43,13 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 
 ## B. Running it
 
-The pilot runs in **runs**. A run is opened for a number of blocks you
-choose, admits three participants per block, and keeps going if more turn up.
-When it is finished you close it and open another. There is no limit on how many runs you open
-and no re-provisioning between them, so the pilot can be run whenever
-you want it — a class this morning, five people this afternoon, another
-class next week.
+The pilot runs in **runs**. You open a run, say roughly how many people
+you expect, and send out the link. When that group is finished you close
+it and open another. There is no limit on how many runs you open and no
+re-provisioning between them, so the pilot can be run whenever you want
+it — a lecture of 120 this morning, a group of 12 this afternoon, another
+class next week. **Every run is independent: any run may be any size in
+the range**, and each is audited separately in the data.
 
 | Action | Where |
 |---|---|
@@ -59,34 +60,41 @@ class next week.
 | Snapshot everything as CSV | **PILOT → Export all data as CSV to Drive** |
 | Start over with an empty data set | **PILOT → Start a fresh pilot (new workbooks)** |
 
-**Opening a run.** The menu asks how many blocks. Enter a whole number
-from **5 to 20** — that is 15 to 60 participants. Leave it blank for 10
-blocks (30 participants).
+**Opening a run.** The menu asks how many participants you expect. Enter
+a whole number from **10 to 150**; leave it blank for 30.
 
-Why blocks rather than people: the block is the unit that keeps the
-design balanced. Its three participants share one stochastic sequence —
-identical case types, waiting-cost states and recovery draws — and
-receive the three different labelling policies between them. Sizing a
-run in blocks is what makes its treatment counts come out equal.
+**The number is a plan, not a limit.** If more people turn up than you
+entered, they are admitted. Refusing a student who is sitting in the room
+is the worst thing this instrument could do, so it does not do it: the
+run keeps rolling and the pool grows underneath if it has to. Opening a
+run reserves half again as many places as you asked for — never fewer
+than thirty spare — precisely so an overrun costs nobody any waiting.
+Enter roughly what you expect and stop worrying about it. Over-planning
+is free, because unused places are retired when the next run opens, and
+under-planning no longer costs anyone their seat.
 
-**The size you enter is a plan, not a wall.** If more people turn up than
-you planned for, they are admitted. Refusing a student who is sitting in
-the room is the worst thing this instrument could do, so it does not do
-it: the run keeps rolling in whole blocks and the pool grows underneath
-if it has to. Opening a run reserves twenty blocks of slack beyond the
-plan precisely so this costs nobody any waiting. Round the plan up to
-roughly what you expect and stop worrying about it — over-planning is
-free, since unused places are retired when the next run opens.
+**Sizes round up to groups of three.** The group of three is what keeps
+the design balanced: its three participants share one stochastic sequence
+— identical case types, waiting-cost states and recovery draws — and take
+the three different labelling policies between them. Ask for 41 and you
+get 42 places; ask for 100 and you get 102; ask for 99 or 150 and you get
+exactly that.
 
 **A class that is not a multiple of three is fine.** Forty-one students
-occupy thirteen complete blocks and two thirds of a fourteenth, so two
-arms get fourteen participants and one gets thirteen: the counts differ
-by one, which is the guarantee the block design makes at every interim
-point. The one unused place in the half-filled block is retired when you
-open the next run, so the next run starts clean. The only thing you lose
-is that the final block is an incomplete triple — two of its three arms
-ran against that sequence, not three — so if you later analyse within
-blocks, that one block contributes a pair rather than a triple.
+occupy thirteen complete groups and two thirds of a fourteenth, so two
+policies get fourteen participants and one gets thirteen — the counts
+differ by one, which is the guarantee the design makes at every interim
+point. The one unused place is retired when you open the next run, so the
+next run starts clean. The only thing you lose is that the final group is
+incomplete: two of its three policies ran against that sequence rather
+than three, so in a within-group analysis that one group contributes a
+pair instead of a triple.
+
+**When fewer people turn up than planned** — seven for a run planned at
+120, say — nothing is wasted that matters. The unused places in the
+half-filled group are retired when you open the next run, so the next run
+starts on a clean boundary and its own balance is exact. Nothing is
+rejected and no earlier assignment changes.
 
 The participant link never changes:
 `https://amazingly.github.io/queue-study-pilot/?entry=join&c=100200`.
@@ -183,21 +191,24 @@ reopens the payment and approval questions you have set aside here.
   every literal that carries a backslash is asserted, so neither a broken
   escape nor a silently wrong-but-valid one can reach a deployment.
 - The open-ended pool has its own suite (`test-pool.js`, 36 checks) that
-  drives real participants through `doPost` against mocked Sheets and
-  asserts what matters rather than what the code appears to say: a run
-  admits its planned places and then admits the overrun too, in the same
-  run; a later run opens immediately and grows the ledger; **every
-  appended draw equals what the seeded generator produces for that block
-  index**, and the original rows are byte-identical afterwards; each
-  block's three participants share one sequence and hold three distinct
-  policies; a run that ends part-way through a block retires exactly the
-  unused places; and the commitments and gateway integrity checks still
-  pass after four runs and three growth events.
-- Three overrun scenarios were measured directly: 41 arrivals against a
-  42-place plan (41 in, 14/13/14), 41 against a 30-place plan (41 in,
-  13/14/14), and 200 against a 15-place plan (200 in, 67/66/67). Nobody
-  was refused in any of them, the treatment spread was one in all three,
-  and every block but the last was a complete matched triple.
+  drives real participants through `doPost` against mocked Sheets: a run
+  admits its planned places and the overrun too, in the same run; a later
+  run opens immediately and grows the ledger; **every appended draw equals
+  what the seeded generator produces for that block index**, and the
+  original rows are byte-identical afterwards; each group's three
+  participants share one sequence and take three distinct policies; a run
+  that ends part-way retires exactly the unused places; and the
+  commitments and gateway integrity checks still pass afterwards.
+- The whole size range was then exercised end to end — runs asked for 10,
+  11, 12, 25, 41, 50, 99, 100, 149 and 150 participants, each seated
+  exactly, with the treatment spread never above one and every group but
+  the last a complete triple. Overruns were measured at both ends: 47
+  arrivals against a plan of 10, and 190 against a plan of 150. Nobody was
+  refused in any scenario, and the commitments verified afterwards.
+- Provisioning cost was measured rather than assumed: the largest growth
+  the design can ask for — 75 groups, enough for a 150-person run on a
+  fresh pool — costs about 5,600 Apps Script service calls, roughly 6
+  seconds and at worst 17, comfortably inside the six-minute limit.
 - The reviewed backend suite (1,539 checks) and client suite (78 tests)
   both still pass; the production source is untouched.
 - The CSV writer was unit-tested for embedded commas, quotes, newlines and
