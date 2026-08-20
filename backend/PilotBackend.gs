@@ -4824,7 +4824,7 @@ function PILOT_SHOW_LINK() {
   var pool = poolLecture_();
   return opsNotify_("Pilot participant link",
     pilotParticipantUrl_() +
-    "\n\nEntry open: " + (collectionOpen_() && configGet_("live_open", "") === "TRUE" ? "YES" : "NO") +
+    "\n\nEntry open: " + (collectionOpen_() && configTrue_("live_open") ? "YES" : "NO") +
     "\nPlaces used: " + (pool ? Number(pool.claimed_count) : 0) + " of " + (pool ? Number(pool.maximum_n) : 0) +
     "\n\nAnyone with this link can take part. Close entry with PILOT -> Stop the pilot.");
 }
@@ -4874,7 +4874,7 @@ function PILOT_STATUS() {
     return s ? Math.max(0, s.getLastRow() - 1) : 0;
   };
   return opsNotify_("Pilot status",
-    "Entry open : " + (collectionOpen_() && configGet_("live_open", "") === "TRUE" ? "YES" : "NO") +
+    "Entry open : " + (collectionOpen_() && configTrue_("live_open") ? "YES" : "NO") +
     "\nPlaces     : " + (pool ? Number(pool.claimed_count) : 0) + " used of " + (pool ? Number(pool.maximum_n) : 0) +
     "\nSessions   : " + count("sessions") +
     "\nCompleted  : " + count("participants") +
