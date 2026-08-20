@@ -475,6 +475,23 @@ function configGet_(field, fallback) {
   return (value === "" || value === null || value === undefined) ? fallback : value;
 }
 
+/*
+ * Boolean config reads.
+ *
+ * configSet_ writes the STRING "TRUE", but Google Sheets coerces it into a
+ * boolean on the way into the cell, so a later configGet_ returns the
+ * boolean true and String(true) is "true" — which does not equal "TRUE".
+ * Every boolean config comparison must therefore normalise case.
+ *
+ * Measured against the live platform on 2026-08-20, after an on-demand
+ * session opened successfully and then refused every participant with
+ * LECTURE_CLOSED. The mocked-Sheets harness cannot reproduce this: it
+ * stores whatever value it is handed, verbatim.
+ */
+function configTrue_(field) {
+  return String(configGet_(field, "")).toUpperCase() === "TRUE";
+}
+
 function configSetIfAbsent_(field, value) {
   var sheet = researchSheet_(SHEETS.CONFIG);
   var row = findRowByValue_(sheet, HEADERS.config, "field", field);
@@ -1398,7 +1415,7 @@ function liveSession_() {
   var code = String(configGet_("live_code", ""));
   if (!code) return null;
   return {
-    open: String(configGet_("live_open", "FALSE")) === "TRUE",
+    open: configTrue_("live_open"),
     code: code,
     batch: String(configGet_("live_batch", "")),
     opened_at: String(configGet_("live_opened_at", "")),
@@ -3669,7 +3686,7 @@ function releaseReadinessCheck_() {
   // collection therefore requires a coordinator to state explicitly that the
   // approved ethics text is in place (Queue Study -> "Confirm ethics wording
   // is final", or confirmEthicsWordingFinal() in the editor).
-  if (String(configGet_("ethics_wording_final", "")) !== "TRUE") {
+  if (!configTrue_("ethics_wording_final")) {
     problems.push("Ethics wording not confirmed final - run Queue Study > \"Confirm ethics wording is final\" " +
       "once the approved committee name, contact and approval reference are published on the site");
   }
@@ -3942,7 +3959,7 @@ function setupOperationsSheets_() {
   var dashboardExisted = !!book.getSheetByName(OPS.DASHBOARD_SHEET);
   var control = ensureOperationsSheet_(book, OPS.CONTROL_SHEET, CONTROL_HEADERS);
   var dashboard = ensureOperationsSheet_(book, OPS.DASHBOARD_SHEET, []);
-  var alreadyFormatted = String(configGet_("operations_sheets_ready", "")) === "TRUE";
+  var alreadyFormatted = configTrue_("operations_sheets_ready");
 
   if (control.getLastRow() < 2) {
     var rows = [];
