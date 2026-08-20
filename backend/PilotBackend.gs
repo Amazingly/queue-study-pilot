@@ -3885,6 +3885,7 @@ function onOpen() {
       .addItem("3. Show the participant link", "PILOT_SHOW_LINK")
       .addSeparator()
       .addItem("Export all data as CSV to Drive", "PILOT_EXPORT_CSV")
+      .addItem("Start a fresh pilot pool (resize)", "PILOT_NEW_ENVIRONMENT")
       .addItem("Pilot status", "PILOT_STATUS")
       .addItem("Refresh dashboard", "BEGINNER_REFRESH_DASHBOARD")
       .addSeparator()
@@ -4749,7 +4750,7 @@ function doGet() {
    patches listed in build-backend.mjs.
    ================================================================== */
 
-var PILOT_POOL_PLACES = 120;          // 40 blocks of three
+var PILOT_POOL_PLACES = 750;          // 250 blocks of three
 var PILOT_LINK_CODE = "100200";       // fixed, embedded in the participant URL
 var PILOT_CSV_FOLDER = "Queue Study PILOT data";
 var PILOT_EXPORT_TABS = [
@@ -4863,6 +4864,51 @@ function PILOT_EXPORT_CSV() {
     "\nTimestamp: " + stamp +
     "\n\n" + written.join("\n") +
     "\n\nOpen Drive and search for the folder name to download them.");
+}
+
+/* 4b. Start a FRESH pilot environment at PILOT_POOL_PLACES places.
+ *
+ * A frozen pool cannot be enlarged in place: generateAssignmentBlocks
+ * refuses once sequences exist, buildAllocationSlots refuses once the pool
+ * row exists, and the three SHA-256 commitments are taken over exactly
+ * those tables. That rigidity is deliberate and is not worth weakening.
+ *
+ * So resizing means a new environment: a new sequence version and new
+ * workbooks, frozen afresh. The previous pilot workbooks are left intact
+ * in Drive as a record — nothing is deleted — and simply stop being used.
+ * This is safe for a pilot precisely because pilot data is disposable; the
+ * same operation would NOT be appropriate for the live study once a single
+ * participant had completed.
+ */
+function PILOT_NEW_ENVIRONMENT() {
+  var props = props_();
+  var current = props.getProperty("SEQUENCE_VERSION") || "pilot-seq-v1";
+  var m = current.match(/^(.*?)(d+)$/);
+  var next = m ? (m[1] + (Number(m[2]) + 1)) : (current + "-v2");
+
+  if (!opsConfirm_("Start a fresh pilot environment?",
+      "This provisions a NEW pilot pool of " + PILOT_POOL_PLACES + " places in NEW workbooks, " +
+      "under sequence version " + next + ".\n\n" +
+      "The current pilot workbooks are kept in Drive but stop being used, so any pilot data " +
+      "already collected stays where it is and is no longer added to.\n\nProceed?")) {
+    return "Cancelled.";
+  }
+
+  var report = [];
+  props.setProperty("SEQUENCE_VERSION", next);
+  props.setProperty("COLLECTION_OPEN", "FALSE");
+  props.setProperty("RESEARCH_SPREADSHEET_ID", "PASTE_RESEARCH_SPREADSHEET_ID");
+  props.setProperty("PAYMENT_SPREADSHEET_ID", "PASTE_PAYMENT_SPREADSHEET_ID");
+  clearSecretCache_();
+
+  report.push("Sequence version: " + current + " -> " + next);
+  report.push(createWorkbooks());
+  report.push(provisionStudyPool(PILOT_POOL_PLACES, 0));
+  setupOperationsSheets_();
+
+  return opsNotify_("Fresh pilot environment ready",
+    report.join("\n") +
+    "\n\nNext: PILOT -> 2. Open the participant link.");
 }
 
 /* 5. Status and stop. */

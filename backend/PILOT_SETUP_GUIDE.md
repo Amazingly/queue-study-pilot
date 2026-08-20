@@ -25,10 +25,11 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 
 4. **PILOT → 1. Set up the pilot (once).** Google will ask you to
    authorize: *Advanced → Go to project (unsafe) → Allow*. It is your own
-   script. This creates the two pilot workbooks, provisions **120 places
-   (40 permuted blocks of three)**, freezes the environment, and runs the
-   self-check. It takes about twenty seconds — a fraction of the
-   production run, because the pool is a fraction of the size.
+   script. This creates the two pilot workbooks, provisions **750 places
+   (250 permuted blocks of three)**, freezes the environment, and runs the
+   self-check. It takes roughly a minute — provisioning is the one step
+   whose cost scales with the pool, and 750 places sits comfortably inside
+   the Apps Script six-minute execution limit.
 
 5. **Deploy → New deployment → Web app.** Set **Execute as: Me** and
    **Who has access: Anyone**, deploy, and copy the `/exec` URL.
@@ -49,6 +50,7 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 | Watch progress | **PILOT → Pilot status** |
 | Stop taking new participants | **PILOT → Stop the pilot** |
 | Snapshot everything as CSV | **PILOT → Export all data as CSV to Drive** |
+| Change the pool size | **PILOT → Start a fresh pilot pool (resize)** |
 
 The participant link is
 `https://amazingly.github.io/queue-study-pilot/?entry=join&c=100200`.
@@ -56,6 +58,19 @@ The six-digit code is embedded, so nobody types anything: open the link,
 pick a language, and start. Anyone holding the link can take part until
 you close entry — that was your choice, and it is worth remembering when
 you decide where to post it.
+
+**Resizing the pool.** A provisioned pool is frozen: the stochastic
+sequences, the treatment allocation and the three SHA-256 commitments are
+taken over exactly the tables that exist at provisioning, and the code
+refuses to extend any of them in place. That rigidity is what makes the
+design commitments meaningful, so resizing means starting a fresh
+environment rather than weakening the freeze. **PILOT → Start a fresh
+pilot pool (resize)** bumps the sequence version, creates new pilot
+workbooks and provisions the new size, asking for confirmation first. The
+previous pilot workbooks stay in Drive untouched — nothing is deleted —
+they simply stop receiving data. This is appropriate for a pilot precisely
+because pilot data is disposable; the same operation would be wrong for
+the live study once a single participant had finished.
 
 **The CSV export** writes one timestamped file per tab — `sessions`,
 `rounds`, `participants`, `events`, `errors`, `integrity_report`,
