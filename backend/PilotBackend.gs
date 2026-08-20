@@ -427,6 +427,13 @@ function appendRowObject_(sheet, headers, obj) {
 function findRowByValue_(sheet, headers, columnName, value) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
+  // An empty key cannot identify a row, and createTextFinder("") throws
+  // "Argument cannot be null: findText". Gateway participants carry no
+  // invitation token, so session.token_hash is "" for every classroom
+  // entry; without this guard the comprehension quiz and the finalize
+  // path both crashed with SERVER_ERROR for on-demand participants.
+  // Measured against the live platform on 2026-08-20.
+  if (value === null || value === undefined || String(value) === "") return -1;
   var col = headers.indexOf(columnName) + 1;
   if (col < 1) throw new Error("UNKNOWN_COLUMN:" + columnName);
   var finder = sheet.getRange(2, col, lastRow - 1, 1)
