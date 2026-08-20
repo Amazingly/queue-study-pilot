@@ -25,11 +25,11 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 
 4. **PILOT → 1. Set up the pilot (once).** Google will ask you to
    authorize: *Advanced → Go to project (unsafe) → Allow*. It is your own
-   script. This creates the two pilot workbooks, provisions **750 places
-   (250 permuted blocks of three)**, freezes the environment, and runs the
-   self-check. It takes roughly a minute — provisioning is the one step
-   whose cost scales with the pool, and 750 places sits comfortably inside
-   the Apps Script six-minute execution limit.
+   script. This creates the two pilot workbooks, provisions a **seed pool
+   of 60 places (20 blocks of three)** and runs the self-check. It takes
+   about twenty seconds. The seed size does not cap anything: the pool
+   grows whenever a run needs more, so you never have to guess in
+   advance.
 
 5. **Deploy → New deployment → Web app.** Set **Execute as: Me** and
    **Who has access: Anyone**, deploy, and copy the `/exec` URL.
@@ -43,34 +43,70 @@ published at `https://amazingly.github.io/queue-study-pilot/`.
 
 ## B. Running it
 
+The pilot runs in **runs**. A run is opened for a number of blocks you
+choose, admits three participants per block, and stops there. When it is
+finished you open another. There is no limit on how many runs you open
+and no re-provisioning between them, so the pilot can be run whenever
+you want it — a class this morning, five people this afternoon, another
+class next week.
+
 | Action | Where |
 |---|---|
-| Open entry and get the participant link | **PILOT → 2. Open the participant link** |
-| See the link again | **PILOT → 3. Show the participant link** |
+| Open a run and get the participant link | **PILOT → 2. Open a run (choose the size)** |
+| See the link and how the run is going | **PILOT → 3. Show the link and run status** |
 | Watch progress | **PILOT → Pilot status** |
-| Stop taking new participants | **PILOT → Stop the pilot** |
+| Stop taking new participants now | **PILOT → Stop the pilot** |
 | Snapshot everything as CSV | **PILOT → Export all data as CSV to Drive** |
-| Change the pool size | **PILOT → Start a fresh pilot pool (resize)** |
+| Start over with an empty data set | **PILOT → Start a fresh pilot (new workbooks)** |
 
-The participant link is
+**Opening a run.** The menu asks how many blocks. Enter a whole number
+from **5 to 20** — that is 15 to 60 participants. Leave it blank for 10
+blocks (30 participants). The pool extends itself first if it does not
+already hold that many free places, so the answer is never refused for
+lack of room.
+
+Why blocks rather than people: the block is the unit that keeps the
+design balanced. Its three participants share one stochastic sequence —
+identical case types, waiting-cost states and recovery draws — and
+receive the three different labelling policies between them. Sizing a
+run in blocks is what makes its treatment counts come out exactly equal.
+
+**When a run fills**, the link refuses further entries with a polite
+"session full" rather than quietly eating the next run's places. Open
+another run and the same link works again immediately.
+
+**When a run ends part-way through a block** — four people turn up for
+fifteen places, say — the two unused places in that half-filled block are
+retired when you open the next run, so the next run starts on a clean
+boundary and its own balance is exact. Nothing is rejected and no earlier
+assignment changes.
+
+The participant link never changes:
 `https://amazingly.github.io/queue-study-pilot/?entry=join&c=100200`.
 The six-digit code is embedded, so nobody types anything: open the link,
-pick a language, and start. Anyone holding the link can take part until
-you close entry — that was your choice, and it is worth remembering when
-you decide where to post it.
+pick a language, and start. Anyone holding the link can take part while a
+run is open, which is worth remembering when you decide where to post it.
 
-**Resizing the pool.** A provisioned pool is frozen: the stochastic
-sequences, the treatment allocation and the three SHA-256 commitments are
-taken over exactly the tables that exist at provisioning, and the code
-refuses to extend any of them in place. That rigidity is what makes the
-design commitments meaningful, so resizing means starting a fresh
-environment rather than weakening the freeze. **PILOT → Start a fresh
-pilot pool (resize)** bumps the sequence version, creates new pilot
-workbooks and provisions the new size, asking for confirmation first. The
-previous pilot workbooks stay in Drive untouched — nothing is deleted —
-they simply stop receiving data. This is appropriate for a pilot precisely
-because pilot data is disposable; the same operation would be wrong for
-the live study once a single participant had finished.
+**Growing the pool.** The live study freezes a finite pool on purpose:
+its three SHA-256 commitments are a preregistration, and a
+preregistration that can be extended is not one. The pilot has no
+preregistration to protect, so its pool is open-ended and grows in whole
+blocks as runs need them.
+
+Growth is a *continuation*, not a re-randomisation. Every draw is a pure
+function of the sequence version, the block number and the round, so
+block 21 receives exactly the draws the original generator would have
+produced had it been asked for 21 blocks in the first place. Existing
+rows are never rewritten. The honest consequence, stated plainly: the
+pilot's three commitments are recomputed when the pool grows, so they are
+a checksum of the design as it currently stands rather than a commitment
+made in advance. In the live study they remain untouchable.
+
+**Starting over** is a separate thing from growing. **PILOT → Start a
+fresh pilot (new workbooks)** begins an empty data set under a new
+sequence version; the previous pilot workbooks stay in Drive untouched
+and simply stop being used. You do not need it to run more participants —
+open another run instead.
 
 **The CSV export** writes one timestamped file per tab — `sessions`,
 `rounds`, `participants`, `events`, `errors`, `integrity_report`,
@@ -92,13 +128,14 @@ after, the recovery draw, the choice, the response time and the points.
 Both builds are generated by scripts that assert every change, so this
 list is checkable rather than aspirational.
 
-**Backend** (`build-backend.mjs`, eleven patches): monetary constants set
+**Backend** (`build-backend.mjs`, twelve patches): monetary constants set
 to zero; completion codes prefixed `PILOT-`; a hard refusal to open the
-production workbooks; pilot-labelled workbooks and version strings; the
-Sheet menu replaced; and an appended module providing setup, open, status,
-CSV export and stop. Round processing, the three labelling policies,
-permuted-block assignment, the frozen environment, belief scoring, the
-integrity audit, idempotency and locking are untouched.
+production workbooks; pilot-labelled workbooks and version strings; a
+per-run cap on the live session; the Sheet menu replaced; and an appended
+module providing setup, runs, status, CSV export, stop, and the
+open-ended pool. Round processing, the three labelling policies,
+permuted-block assignment, matched triples, belief scoring, the integrity
+audit, idempotency and locking are untouched.
 
 **Client** (`build-client.mjs`, nine patches): pilot version and endpoint;
 the payment rows removed from the results and completion screens; the
@@ -135,8 +172,23 @@ reopens the payment and approval questions you have set aside here.
 
 ## E. Verification already done
 
-- The backend parses cleanly and every one of the eleven patches was
-  asserted at build time; a failed match aborts the build.
+- The generated backend is parsed at build time and the exact text of
+  every literal that carries a backslash is asserted, so neither a broken
+  escape nor a silently wrong-but-valid one can reach a deployment.
+- The open-ended pool has its own suite (`test-pool.js`, 35 checks) that
+  drives real participants through `doPost` against mocked Sheets and
+  asserts what matters rather than what the code appears to say: a run
+  admits exactly its places and then refuses `LECTURE_FULL`; a second run
+  opens immediately and grows the ledger; **every appended draw equals
+  what the seeded generator produces for that block index**, and the
+  original rows are byte-identical afterwards; each block's three
+  participants share one sequence and hold three distinct policies;
+  treatment counts are exactly equal within every run; a run that ends
+  part-way through a block retires exactly the two unused places; and the
+  three commitments and the gateway integrity checks still pass after
+  four runs and three growth events.
+- The reviewed backend suite (1,539 checks) and client suite (78 tests)
+  both still pass; the production source is untouched.
 - The CSV writer was unit-tested for embedded commas, quotes, newlines and
   Vietnamese text, and round-trips through an RFC 4180 parser.
 - The client was driven end to end headlessly — language, code,
@@ -144,7 +196,3 @@ reopens the payment and approval questions you have set aside here.
   questionnaire, demographics, completion — with no console errors. Ten
   screens were scanned for monetary language; the only two matches are the
   two deliberate statements that there is no payment.
-
-Still to do, and only doable once the endpoint exists: a live round trip
-from a phone, which is also the definitive check that **Who has access:
-Anyone** took.
