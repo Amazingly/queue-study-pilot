@@ -4747,8 +4747,11 @@ function PILOT_SETUP() {
   } else {
     report.push("Workbooks already created; keeping them.");
   }
-  setupOperationsSheets_();
+  // provisionStudyPool calls setupWorkbooks(), which creates the research
+  // tabs. setupOperationsSheets_ reads config, so it must come AFTER that,
+  // not before: the first run failed with SHEET_MISSING:config.
   report.push(provisionStudyPool(PILOT_POOL_PLACES, 0));
+  setupOperationsSheets_();
   return opsNotify_("Pilot ready",
     report.join("\n") +
     "\n\nNext: PILOT -> 2. Open the participant link.");
